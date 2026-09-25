@@ -17,6 +17,12 @@ Requisitos: Windows 10 u 11, ~3 GB libres e internet solo durante la instalació
 
 1. Descarga el proyecto (**Code → Download ZIP**) y descomprímelo, por ejemplo en `Documentos\transcriptor-local`.
 2. Doble clic en **`instalar.bat`**. Instala Python 3.12 (si no lo tienes), las librerías, ffmpeg y el modelo de voz. Tarda unos minutos.
+   Todo queda dentro de la carpeta del proyecto y no toca tu Python global ni el PATH del sistema:
+   - `.venv\` — entorno virtual con las librerías de Python.
+   - `tools\ffmpeg\` — ffmpeg portable.
+   - `models\` — modelo de voz de Whisper.
+
+   Para desinstalar, borra la carpeta del proyecto (tus reuniones en `Documentos\Reuniones` se conservan).
 3. Doble clic en **`iniciar.bat`**. La app se abre en tu navegador en `http://127.0.0.1:7860`.
 
 > Deja abierta (minimizada) la ventana negra mientras uses la app: si la cierras, la app se detiene.

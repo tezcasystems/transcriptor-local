@@ -256,7 +256,7 @@ class Recorder:
             ffmpeg = find_ffmpeg()
             if ffmpeg is None:
                 raise RecorderError(
-                    "Falta ffmpeg. Instálalo con 'winget install --id Gyan.FFmpeg -e' y reinicia la app."
+                    "Falta ffmpeg. Vuelve a ejecutar instalar.bat y reinicia la app."
                 )
             MEETINGS_DIR.mkdir(parents=True, exist_ok=True)
             if shutil.disk_usage(MEETINGS_DIR).free < MIN_FREE_BYTES:

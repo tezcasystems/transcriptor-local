@@ -18,6 +18,13 @@ from pathlib import Path
 # Meeting data must stay on this machine: no usage statistics to Gradio's servers.
 os.environ["GRADIO_ANALYTICS_ENABLED"] = "False"
 
+# Self-contained install: the voice model and ffmpeg live inside the project folder
+# (see instalar.bat), not in the user's cache or the system PATH. Set before any
+# import, because huggingface_hub reads HF_HOME when it is first imported.
+APP_DIR = Path(__file__).resolve().parent
+os.environ.setdefault("HF_HOME", str(APP_DIR / "models"))
+os.environ["PATH"] = str(APP_DIR / "tools" / "ffmpeg" / "bin") + os.pathsep + os.environ.get("PATH", "")
+
 import gradio as gr  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 

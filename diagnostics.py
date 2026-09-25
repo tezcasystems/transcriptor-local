@@ -21,8 +21,13 @@ class CheckResult:
     detail: str
 
 
+LOCAL_FFMPEG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tools", "ffmpeg", "bin", "ffmpeg.exe")
+
+
 def find_ffmpeg() -> Optional[str]:
-    """PATH first, then the winget install folder (PATH changes need a new terminal)."""
+    """The portable copy from instalar.bat first, then PATH, then the winget install folder."""
+    if os.path.isfile(LOCAL_FFMPEG):
+        return LOCAL_FFMPEG
     found = shutil.which("ffmpeg")
     if found:
         return found
@@ -40,7 +45,7 @@ def check_ffmpeg() -> CheckResult:
         "ffmpeg",
         False,
         "No encontrado. Necesario para GRABAR reuniones. "
-        "Instala con 'winget install --id Gyan.FFmpeg -e' y reinicia esta app.",
+        "Vuelve a ejecutar instalar.bat y reinicia esta app.",
     )
 
 
