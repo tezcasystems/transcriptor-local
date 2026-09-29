@@ -5,16 +5,19 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import time
 import zipfile
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
+from typing import Optional
 
 import gradio as gr
 
 from converter_service import ConversionOutcome, Settings, build_markitdown, convert_one
+from media_converter import MEDIA_EXTENSIONS
 from settings import load_config
 from transcription.engine import engine
-from ui.common import LANGUAGE_CHOICES
+from ui.common import LANGUAGE_CHOICES, format_duration, format_eta
 
 OUTPUT_ROOT = Path(tempfile.gettempdir()) / "markitdown_gui"
 PREVIEW_LIMIT = 150_000
@@ -25,6 +28,50 @@ Convierte documentos, hojas de cálculo, presentaciones, imágenes, audio, video
 **PDF · Word · PowerPoint · Excel · CSV · JSON · XML · HTML · EPUB · ZIP · Outlook (.msg) · Jupyter · Imágenes (jpg/png) · YouTube**
 **Audio:** mp3 · wav · m4a · aac · ogg · opus · flac · wma · aiff — **Video:** mp4 · mov · mkv · avi · webm · wmv · flv · 3gp · mpeg
 """
+
+
+@dataclass(frozen=True)
+class _Progress:
+    stage: str
+    started: float  # when this step began, for the time estimate
+    fraction: Optional[float] = None  # None: the step can't measure how far it got
+
+
+# The running conversion, shown by the page's 1 s timer (Gradio's own progress bar
+# draws over the results, which stay hidden until the end, so nobody saw it).
+# One at a time for the whole app: a second click, or one from another browser
+# tab, would queue a duplicate job and slow everything down.
+_current: Optional[_Progress] = None
+
+
+def _set_progress(stage: str, started: float, fraction: Optional[float] = None) -> None:
+    global _current
+    _current = _Progress(stage, started, fraction)
+
+
+def _progress_text(progress: _Progress) -> str:
+    if progress.fraction is None:
+        return f"⚙️ **{progress.stage}…** · {format_duration(time.time() - progress.started)}"
+    eta = format_eta(progress.started, progress.fraction)
+    return f"⚙️ **{progress.stage}…** {progress.fraction:.0%}{eta}"
+
+
+def _first_stage(label: str, is_url: bool, model_size: str) -> str:
+    """What to show before the converter reports anything (documents never do)."""
+    if is_url:
+        return f"Descargando y convirtiendo {label}"
+    if Path(label).suffix.lower() not in MEDIA_EXTENSIONS:
+        return f"Convirtiendo {label}"
+    if engine.busy:
+        return f"Esperando a que termine la transcripción de una reunión para seguir con {label}"
+    if not engine.is_loaded(model_size):
+        return f"Cargando el modelo de voz para transcribir {label}"
+    return f"Transcribiendo {label}"
+
+
+def _sources(files, urls_text) -> list[tuple[str, bool]]:
+    sources = [(f, False) for f in (files or [])]
+    return sources + [(u.strip(), True) for u in (urls_text or "").splitlines() if u.strip()]
 
 
 def _safe_filename(name: str) -> str:
@@ -97,12 +144,45 @@ def _show_record(record: dict):
     )
 
 
-def on_convert(files, urls_text, language, enable_plugins, api_key, model, progress=gr.Progress()):
-    sources = [(f, False) for f in (files or [])]
-    sources += [(u.strip(), True) for u in (urls_text or "").splitlines() if u.strip()]
+def on_start(files, urls_text):
+    """Runs right on click: rejects what can't start and shows the notice at once."""
+    if not _sources(files, urls_text):
+        raise gr.Error("Agrega al menos un archivo o una URL.")
+    running = _current
+    if running is not None:
+        raise gr.Error(f"Ya hay una conversión en curso ({running.stage}). Espera a que termine.")
+    return (
+        gr.Button(value="⏳ Convirtiendo…", interactive=False),
+        "⏳ **Preparando la conversión…**",
+        "",
+        gr.Column(visible=False),
+        gr.Timer(active=True),
+    )
+
+
+def on_tick():
+    progress = _current
+    return _progress_text(progress) if progress else gr.skip()
+
+
+def on_finish(final_status):
+    return gr.Button(value="🔄 Convertir", interactive=True), final_status, gr.Timer(active=False)
+
+
+def on_convert(files, urls_text, language, enable_plugins, api_key, model):
+    global _current
+    sources = _sources(files, urls_text)
     if not sources:
         raise gr.Error("Agrega al menos un archivo o una URL.")
+    started = time.time()
+    _set_progress("Preparando la conversión", started)
+    try:
+        return _convert(sources, started, language, enable_plugins, api_key, model)
+    finally:
+        _current = None  # also after an error, or the button would stay blocked
 
+
+def _convert(sources, started, language, enable_plugins, api_key, model):
     config = load_config()
     settings = Settings(
         enable_plugins=enable_plugins,
@@ -120,7 +200,9 @@ def on_convert(files, urls_text, language, enable_plugins, api_key, model, progr
     outcomes: list[ConversionOutcome] = []
     for i, (source, is_url) in enumerate(sources):
         label = source if is_url else Path(source).name
-        progress(i / len(sources), desc=f"Convirtiendo {label} ({i + 1}/{len(sources)})")
+        count = f" ({i + 1}/{len(sources)})" if len(sources) > 1 else ""
+        step_started = time.time()
+        _set_progress(_first_stage(label, is_url, settings.model_size) + count, step_started)
         if is_url and not re.match(r"^https?://", source, re.IGNORECASE):
             outcomes.append(
                 ConversionOutcome(
@@ -130,14 +212,11 @@ def on_convert(files, urls_text, language, enable_plugins, api_key, model, progr
                 )
             )
             continue
-        if engine.busy:
-            progress(i / len(sources), desc="Esperando a que termine la transcripción de una reunión…")
 
-        def report(fraction, i=i, label=label):
-            progress((i + fraction) / len(sources), desc=f"Transcribiendo {label}: {fraction:.0%}")
+        def report(fraction, label=label, count=count, step_started=step_started):
+            _set_progress(f"Transcribiendo {label}{count}", step_started, fraction)
 
         outcomes.append(convert_one(source, md, is_url=is_url, progress_callback=report))
-    progress(1.0, desc="Listo")
 
     md_paths, zip_path = _write_outputs(outcomes)
     records = [{**asdict(o), "md_path": p} for o, p in zip(outcomes, md_paths)]
@@ -158,6 +237,14 @@ def on_convert(files, urls_text, language, enable_plugins, api_key, model, progr
         for r in records
     ]
     first = next((r for r in records if r["ok"]), records[0])
+    took = format_duration(time.time() - started)
+    if ok_count == len(outcomes):
+        final_status = f"✅ **Conversión terminada** en {took}. El resultado está abajo."
+    else:
+        final_status = (
+            f"⚠️ **Conversión terminada con errores** en {took}: "
+            f"{ok_count} de {len(outcomes)} correctos. Revisa el detalle abajo."
+        )
 
     return (
         gr.Column(visible=True),
@@ -165,6 +252,7 @@ def on_convert(files, urls_text, language, enable_plugins, api_key, model, progr
         gr.Dataframe(value=rows, visible=multi),
         gr.DownloadButton(value=zip_path, visible=bool(multi and zip_path)),
         records,
+        final_status,
         *_show_record(first),
     )
 
@@ -176,7 +264,9 @@ def on_select_row(evt: gr.SelectData, records):
 
 
 def on_clear():
-    return None, "", gr.Column(visible=False), []
+    # A running conversion keeps its notice: clearing the form doesn't stop it.
+    status = gr.skip() if _current else ""
+    return None, "", gr.Column(visible=False), [], status
 
 
 def build() -> None:
@@ -204,8 +294,11 @@ def build() -> None:
                 "Con uno verás el resultado directo; con varios, una tabla.</small>"
             )
             with gr.Row():
-                convert_btn = gr.Button("🔄 Convertir", variant="primary", size="lg", scale=3)
+                convert_btn = gr.Button(
+                    "🔄 Convertir", variant="primary", size="lg", scale=3, elem_id="convert-btn"
+                )
                 clear_btn = gr.Button("🧹 Limpiar", size="lg", scale=1)
+            status_out = gr.Markdown(elem_id="convert-status")
 
         with gr.Column(scale=2):
             language_in = gr.Dropdown(
@@ -256,11 +349,29 @@ def build() -> None:
         md_btn = gr.DownloadButton("⬇️ Descargar .md", visible=False)
 
     detail_outputs = [selected_title, preview_out, raw_out, md_btn, notice_out, error_acc, error_detail_out]
+    final_status_state = gr.State("")
+    # Only ticks while this page is converting; the meetings tab has its own timer.
+    timer = gr.Timer(1.0, active=False)
 
+    # Click -> notice + disabled button at once -> convert -> button back + outcome.
+    # .success: nothing runs if the start was rejected; .then: the button comes back
+    # even if the conversion failed.
     convert_btn.click(
+        on_start,
+        inputs=[files_in, urls_in],
+        outputs=[convert_btn, status_out, final_status_state, results_col, timer],
+        show_progress="hidden",
+    ).success(
         on_convert,
         inputs=[files_in, urls_in, language_in, plugins_in, api_key_in, model_in],
-        outputs=[results_col, summary_out, table_out, zip_btn, records_state, *detail_outputs],
+        outputs=[results_col, summary_out, table_out, zip_btn, records_state, final_status_state, *detail_outputs],
+        show_progress="hidden",
+    ).then(
+        on_finish,
+        inputs=[final_status_state],
+        outputs=[convert_btn, status_out, timer],
+        show_progress="hidden",
     )
+    timer.tick(on_tick, outputs=[status_out], show_progress="hidden")
     table_out.select(on_select_row, inputs=[records_state], outputs=detail_outputs)
-    clear_btn.click(on_clear, outputs=[files_in, urls_in, results_col, records_state])
+    clear_btn.click(on_clear, outputs=[files_in, urls_in, results_col, records_state, status_out])

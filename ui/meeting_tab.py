@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import html
 import math
-import time
 from datetime import datetime
 
 import gradio as gr
@@ -19,6 +18,7 @@ from ui.common import (
     COPY_JS,
     LANGUAGE_CHOICES,
     format_duration,
+    format_eta,
     format_size,
     notify_copied,
     open_folder,
@@ -125,14 +125,7 @@ def _mute_button(muted: bool, visible: bool = True, hotkey: str = "") -> gr.Butt
 def _job_text(meeting: store.Meeting) -> str:
     progress = transcription_queue.progress()
     if progress and progress.meeting_id == meeting.id:
-        eta = ""
-        if progress.fraction > 0.03:
-            elapsed = time.time() - progress.started
-            remaining = elapsed * (1 - progress.fraction) / progress.fraction
-            if remaining < 60:
-                eta = f" · ≈ {max(5, round(remaining / 5) * 5)} s restantes"
-            else:
-                eta = f" · ≈ {round(remaining / 60)} min restantes"
+        eta = format_eta(progress.started, progress.fraction)
         return f"⚙️ **{progress.stage}…** {progress.fraction:.0%}{eta}"
     if meeting.status == store.ERROR:
         return f"❌ **No se pudo transcribir:** {meeting.error}"

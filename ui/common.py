@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
 
 import gradio as gr
@@ -78,3 +79,15 @@ def format_duration(seconds: float) -> str:
     h, rem = divmod(seconds, 3600)
     m, s = divmod(rem, 60)
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m:02d}:{s:02d}"
+
+
+def format_eta(started: float, fraction: float) -> str:
+    """' · ≈ 3 min restantes' for a job that began at `started` and is `fraction`
+    done; empty while it's too early for a meaningful estimate."""
+    if fraction <= 0.03:
+        return ""
+    elapsed = time.time() - started
+    remaining = elapsed * (1 - fraction) / fraction
+    if remaining < 60:
+        return f" · ≈ {max(5, round(remaining / 5) * 5)} s restantes"
+    return f" · ≈ {round(remaining / 60)} min restantes"

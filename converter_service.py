@@ -107,7 +107,8 @@ def convert_one(
     extension = "" if is_url else Path(source).suffix.lower()
     try:
         if is_url:
-            result = md.convert_url(source)
+            # A link to an audio/video file is transcribed too, so it reports progress as well.
+            result = md.convert_url(source, progress_callback=progress_callback)
         else:
             result = md.convert_local(source, progress_callback=progress_callback)
     except FileConversionException as exc:
