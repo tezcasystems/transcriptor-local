@@ -52,7 +52,7 @@ def _tips(mode: str) -> str:
     )
 
 # Measured on this laptop (x times faster than real time); web meetings have two tracks.
-_SPEED = {"base": 11.0, "small": 3.3, "medium": 1.0}
+_SPEED = {"base": 11.0, "small": 3.3, "medium": 1.0, "large-v3-turbo": 1.5}
 
 _NO_WATCH = {"id": None, "shown": False}
 

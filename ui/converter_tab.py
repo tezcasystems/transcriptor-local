@@ -103,12 +103,14 @@ def on_convert(files, urls_text, language, enable_plugins, api_key, model, progr
     if not sources:
         raise gr.Error("Agrega al menos un archivo o una URL.")
 
+    config = load_config()
     settings = Settings(
         enable_plugins=enable_plugins,
         api_key=(api_key or "").strip() or os.environ.get("OPENAI_API_KEY"),
         model=(model or VISION_MODEL_CHOICES[0]).strip(),
         language=(language or LANGUAGE_CHOICES[0][1]).strip(),
-        model_size=load_config().model_size,
+        model_size=config.model_size,
+        vocabulary=config.vocabulary,
     )
     try:
         md = build_markitdown(settings)

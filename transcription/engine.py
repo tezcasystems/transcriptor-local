@@ -21,10 +21,18 @@ log = logging.getLogger("mk.engine")
 MODEL_CHOICES = [
     ("Rápido (base) · ~6 min por hora de audio", "base"),
     ("Equilibrado (small) · ~18 min por hora", "small"),
-    ("Máxima precisión (medium) · ~1 h por hora · la 1ª vez descarga ~1.5 GB", "medium"),
+    ("Máxima precisión (turbo) · ~40 min por hora · usa el vocabulario · la 1ª vez descarga ~1.6 GB",
+     "large-v3-turbo"),
+    ("Anterior (medium) · ~1 h por hora · turbo es igual de rápido y más preciso", "medium"),
 ]
-MODEL_ORDER = ["base", "small", "medium"]
+MODEL_ORDER = ["base", "small", "medium", "large-v3-turbo"]  # least to most accurate
 DEFAULT_MODEL = "small"
+# Measured on a real meeting: with turbo the word list fixed names and jargon with
+# no side effects, but small started inventing phrases from it and ran 4x slower.
+VOCABULARY_MODELS = {"large-v3-turbo"}
+# Hugging Face repos, to tell whether a model is already on disk. faster-whisper
+# downloads most sizes from Systran, but turbo comes from another publisher.
+_MODEL_REPOS = {"large-v3-turbo": "mobiuslabsgmbh/faster-whisper-large-v3-turbo"}
 # Measured on a 14-thread laptop: 4 threads are as fast as 14. Never take more
 # than half the machine, so a 4-core teammate can keep working during a job.
 CPU_THREADS = max(1, min(4, (os.cpu_count() or 2) // 2))
@@ -75,14 +83,31 @@ def _split_at_pauses(seg) -> list[Segment]:
 def model_cached(size: str) -> bool:
     from huggingface_hub.constants import HF_HUB_CACHE
 
-    snapshots = Path(HF_HUB_CACHE) / f"models--Systran--faster-whisper-{size}" / "snapshots"
+    repo = _MODEL_REPOS.get(size, f"Systran/faster-whisper-{size}")
+    snapshots = Path(HF_HUB_CACHE) / f"models--{repo.replace('/', '--')}" / "snapshots"
     return snapshots.is_dir() and any(snapshots.iterdir())
 
 
+def vocabulary_hint(vocabulary: str) -> Optional[str]:
+    """User's word list (one per line or comma-separated) -> Whisper hotwords.
+
+    Whisper keeps these in mind on every 30 s window, so names, acronyms and
+    jargon come out spelled right. Empty -> None (plain transcription).
+    Whisper imitates the hint's style: without the final period it dropped
+    every period from the transcript; with it, punctuation came out better."""
+    words = [w.strip() for w in re.split(r"[,\n;]+", vocabulary or "") if w.strip()]
+    if not words:
+        return None
+    hint = ", ".join(words)
+    return hint if hint.endswith((".", "!", "?")) else hint + "."
+
+
 def better_model(size: str) -> str:
-    """The next more accurate model (for re-transcribing), or the same if it's the top one."""
+    """The next more accurate model (for re-transcribing), or the same if it's the top one.
+    Medium is skipped: turbo is as fast on CPU and more accurate."""
     i = MODEL_ORDER.index(size) if size in MODEL_ORDER else 0
-    return MODEL_ORDER[min(i + 1, len(MODEL_ORDER) - 1)]
+    better = MODEL_ORDER[min(i + 1, len(MODEL_ORDER) - 1)]
+    return "large-v3-turbo" if better == "medium" else better
 
 
 if sys.platform == "win32":
@@ -164,6 +189,7 @@ class WhisperEngine:
         language: Optional[str] = None,
         model_size: str = DEFAULT_MODEL,
         on_progress: Optional[Callable[[float], None]] = None,
+        vocabulary: str = "",
     ) -> tuple[list[Segment], float]:
         """Returns (segments, audio duration in seconds). One transcription at a time."""
         with self._lock, _background_priority():
@@ -176,6 +202,7 @@ class WhisperEngine:
                     vad_filter=True,
                     condition_on_previous_text=False,
                     word_timestamps=True,
+                    hotwords=vocabulary_hint(vocabulary) if model_size in VOCABULARY_MODELS else None,
                 )
                 duration = info.duration or 0.0
                 result = []

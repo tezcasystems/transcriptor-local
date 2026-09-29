@@ -37,6 +37,12 @@ Requisitos: Windows 10 u 11, ~3 GB libres e internet solo durante la instalació
 4. Pulsa **Detener y transcribir**. La transcripción aparece sola al terminar (unos 18 minutos por cada hora de reunión, en segundo plano).
 5. Usa **Copiar con instrucción de resumen** y pégalo en tu IA.
 
+**Mejorar la precisión**
+
+- En **⚙️ Configuración** elige el modelo **Máxima precisión (turbo)**: se equivoca mucho menos, aunque tarda unos 40 minutos por hora de reunión (la primera vez descarga ~1.6 GB).
+- Con turbo, escribe en **Vocabulario** los nombres de personas, clientes, productos y siglas que se mencionan en tus reuniones; así salen bien escritos.
+- Si una transcripción ya hecha salió con errores, ábrela en **📚 Historial** y usa **Re-transcribir** con turbo (se aplica el vocabulario actual).
+
 **Buenas prácticas**
 
 - 🎧 En reuniones web usa audífonos; los de cable suenan mejor que los Bluetooth en llamadas.

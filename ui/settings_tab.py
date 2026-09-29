@@ -7,7 +7,7 @@ import gradio as gr
 from diagnostics import run_all_checks
 from meetings import store
 from settings import MEETINGS_DIR, RETENTION_CHOICES, load_config, update_config
-from transcription.engine import MODEL_CHOICES
+from transcription.engine import MODEL_CHOICES, VOCABULARY_MODELS
 from ui.common import format_size, open_folder
 
 
@@ -40,6 +40,18 @@ def on_model_change(model_size):
     return _diagnostics_md()
 
 
+def on_vocabulary_save(vocabulary):
+    vocabulary = (vocabulary or "").strip()
+    update_config(vocabulary=vocabulary)
+    if vocabulary and load_config().model_size not in VOCABULARY_MODELS:
+        gr.Info("Vocabulario guardado. Se aplicará cuando uses el modelo 'Máxima precisión (turbo)'.")
+    elif vocabulary:
+        gr.Info("Vocabulario guardado: se usará en las próximas transcripciones y al re-transcribir.")
+    else:
+        gr.Info("Vocabulario vacío: se transcribirá sin palabras guía.")
+    return vocabulary
+
+
 def on_retention_change(days):
     # Not applied on the spot: a misclick on "7 días" must not wipe weeks of audio.
     update_config(retention_days=days)
@@ -63,6 +75,19 @@ def build(tab: gr.Tab) -> None:
                 label="Modelo",
                 info="Tiempos medidos en esta laptop. 'Equilibrado' es el recomendado para reuniones.",
             )
+            vocabulary_in = gr.Textbox(
+                value=config.vocabulary,
+                label="Vocabulario (nombres, siglas y términos de tus reuniones)",
+                info=(
+                    "Solo con el modelo 'Máxima precisión (turbo)'. Uno por línea o separados por comas: "
+                    "nombres de personas, clientes, productos o siglas. Mejor pocos y específicos (hasta ~50)."
+                ),
+                placeholder="María González\nProyecto Atlas\nCRM\nRecursos Humanos",
+                lines=4,
+                max_lines=10,
+                max_length=650,  # Whisper keeps ~220 tokens of hints (~700 chars in Spanish)
+            )
+            vocabulary_btn = gr.Button("💾 Guardar vocabulario", size="sm")
             gr.Markdown("### 🗂️ Almacenamiento")
             retention_in = gr.Radio(
                 RETENTION_CHOICES,
@@ -79,6 +104,7 @@ def build(tab: gr.Tab) -> None:
 
     tab.select(_storage_md, outputs=[storage_out])
     model_in.change(on_model_change, inputs=[model_in], outputs=[diag_out])
+    vocabulary_btn.click(on_vocabulary_save, inputs=[vocabulary_in], outputs=[vocabulary_in])
     retention_in.change(on_retention_change, inputs=[retention_in])
     open_btn.click(on_open_folder)
     recheck_btn.click(_diagnostics_md, outputs=[diag_out])

@@ -285,6 +285,8 @@ class TranscriptionQueue:
         ensure_listen_file(meeting)
 
         results: dict[str, list[Segment]] = {}
+        # Read now, not at recording time: adding a name and re-transcribing applies it.
+        vocabulary = load_config().vocabulary
         for i, track in enumerate(tracks):
             path = meeting.track_path(track)
             if not path.exists():
@@ -303,6 +305,7 @@ class TranscriptionQueue:
                 on_progress=lambda f, i=i, label=label: self._set(
                     meeting, f"Transcribiendo {label}", (i + f) / len(tracks), started
                 ),
+                vocabulary=vocabulary,
             )
             results[track] = segments
             meeting.duration = max(meeting.duration, duration)

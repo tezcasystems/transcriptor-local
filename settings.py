@@ -9,6 +9,8 @@ import threading
 from dataclasses import asdict, dataclass, fields, replace
 from pathlib import Path
 
+from transcription.engine import MODEL_ORDER
+
 
 def _documents_dir() -> Path:
     if sys.platform == "win32":
@@ -31,13 +33,14 @@ class UserConfig:
     retention_days: int = 30  # 0 = keep audio forever
     last_mode: str = "web"
     last_mic: str = ""
+    vocabulary: str = ""  # names and jargon Whisper should spell right
 
 
 _lock = threading.Lock()
 
 
 _ALLOWED = {
-    "model_size": {"base", "small", "medium"},
+    "model_size": set(MODEL_ORDER),
     "retention_days": {days for _, days in RETENTION_CHOICES},
     "last_mode": {"web", "presencial"},
 }

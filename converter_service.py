@@ -30,6 +30,7 @@ class Settings:
     model: str = "gpt-4o-mini"
     language: str = "es-MX"
     model_size: str = DEFAULT_MODEL
+    vocabulary: str = ""
 
 
 @dataclass
@@ -57,7 +58,9 @@ def build_markitdown(settings: Settings) -> MarkItDown:
     # MarkItDown has no public unregister API, hence the private list.
     md._converters = [r for r in md._converters if not isinstance(r.converter, AudioConverter)]
     md.register_converter(
-        MediaTranscriptionConverter(language=settings.language, model_size=settings.model_size),
+        MediaTranscriptionConverter(
+            language=settings.language, model_size=settings.model_size, vocabulary=settings.vocabulary
+        ),
         priority=PRIORITY_SPECIFIC_FILE_FORMAT - 1,
     )
     return md

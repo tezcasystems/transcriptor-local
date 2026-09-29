@@ -39,10 +39,11 @@ def _check_audio_stream(file_stream: BinaryIO) -> None:
 
 
 class MediaTranscriptionConverter(DocumentConverter):
-    def __init__(self, language: str = "es-MX", model_size: str = DEFAULT_MODEL):
+    def __init__(self, language: str = "es-MX", model_size: str = DEFAULT_MODEL, vocabulary: str = ""):
         super().__init__()
         self.language = language
         self.model_size = model_size
+        self.vocabulary = vocabulary
 
     def accepts(self, file_stream: BinaryIO, stream_info: StreamInfo, **kwargs: Any) -> bool:
         extension = (stream_info.extension or "").lower()
@@ -58,6 +59,7 @@ class MediaTranscriptionConverter(DocumentConverter):
             language=self.language,
             model_size=self.model_size,
             on_progress=kwargs.get("progress_callback"),
+            vocabulary=self.vocabulary,
         )
         long_audio = duration >= 3600
         body = "\n\n".join(
